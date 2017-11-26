@@ -5,18 +5,15 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"html/template"
-	// "io"
 	"log"
 	"net/http"
-	// "net/url"
 	"os"
-	"regexp"
-	// "strconv"
 	"strings"
 )
 
@@ -94,15 +91,22 @@ func Authorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-var itemRegexp = regexp.MustCompile("^(.*) x(\\d+)$")
-
-type Item struct {
-	Name     string
-	Quantity int
-}
-
 func Index(w http.ResponseWriter, r *http.Request) {
-	renderView(w, r, "index", nil, nil)
+	token, err := getToken(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	colonies, err := NewAPI(r.Context(), token).GetColonies(getCharacter(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	renderView(w, r, "index", nil, map[string]interface{}{
+		"Colonies": colonies,
+	})
 }
 
 func Logout(w http.ResponseWriter, r *http.Request) {
@@ -152,11 +156,6 @@ func ssoHandler(h http.Handler) http.Handler {
 	})
 }
 
-type Character struct {
-	ID   int    `json:"CharacterID"`
-	Name string `json:"CharacterName"`
-}
-
 type _characterKey int
 
 const characterKey _characterKey = 0
@@ -170,8 +169,25 @@ func getCharacter(r *http.Request) Character {
 	return r.Context().Value(characterKey).(Character)
 }
 
+func getToken(r *http.Request) (*oauth2.Token, error) {
+	session, err := store.Get(r, sessionName)
+	if err != nil {
+		return nil, err
+	}
+
+	token, ok := session.Values["token"].(*oauth2.Token)
+	if !ok {
+		return nil, fmt.Errorf("token not a token")
+	}
+
+	return token, nil
+}
+
 func renderView(w http.ResponseWriter, r *http.Request, name string, helpers template.FuncMap, data interface{}) {
 	funcs := template.FuncMap{
+		"title": func(s string) string {
+			return strings.Title(s)
+		},
 		"character": func() Character {
 			return getCharacter(r)
 		},
