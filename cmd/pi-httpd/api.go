@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gregjones/httpcache"
 	"golang.org/x/oauth2"
 	"net/http"
 )
+
+var cache = httpcache.NewMemoryCacheTransport()
 
 type API struct {
 	ctx context.Context
@@ -18,7 +21,9 @@ func NewAPI(ctx context.Context, tok *oauth2.Token) *API {
 }
 
 func (api *API) client() *http.Client {
-	return oauthConfig.Client(api.ctx, api.tok)
+	client := &http.Client{Transport: cache}
+	ctx := context.WithValue(api.ctx, oauth2.HTTPClient, client)
+	return oauthConfig.Client(ctx, api.tok)
 }
 
 func (api *API) Get(out interface{}, format string, parameters ...interface{}) (err error) {
